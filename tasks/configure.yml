@@ -45,6 +45,61 @@
     mode:  0755
     setype: mysqld_db_t
 
+- stat:
+    path: /var/lib/mysql
+  register: stat_mysql_data_directory
+
+- name: Move datadir contents
+  shell: "cp -Rp /var/lib/mysql/* {{ mysql_datadir }}"
+  when:
+      - "'{{ mysql_datadir }}' != '/var/lib/mysql'"
+      - stat_mysql_data_directory.stat.islnk == false
+
+- name: Delete default location
+  file:
+    path: /var/lib/mysql
+    state: absent
+  when:
+      - "'{{ mysql_datadir }}' != '/var/lib/mysql'"
+      - stat_mysql_data_directory.stat.islnk == false
+
+- name: Symlink datadir back into the original location
+  file:
+      src: "{{ mysql_datadir }}"
+      dest: /var/lib/mysql
+      state: link
+      owner: mysql
+      group: mysql
+      mode:  0755
+      setype: mysqld_db_t
+  when:
+      - "'{{ mysql_datadir }}' != '/var/lib/mysql'"
+      - stat_mysql_data_directory.stat.islnk == false
+
+- name: Add datadir read rights to apparmor
+  lineinfile:
+      name: /etc/apparmor.d/local/usr.sbin.mysqld
+      line: "{{ mysql_datadir }} r,"
+  when:
+      - "'{{ mysql_datadir }}' != '/var/lib/mysql'"
+      - stat_mysql_data_directory.stat.islnk == false
+
+- name: Add datadir full rights to apparmor
+  lineinfile:
+      name: /etc/apparmor.d/local/usr.sbin.mysqld
+      line: "{{ mysql_datadir }}** rwk,"
+  when:
+      - "'{{ mysql_datadir }}' != '/var/lib/mysql'"
+      - stat_mysql_data_directory.stat.islnk == false
+
+- name: Reload apparmor
+  shell: invoke-rc.d apparmor reload
+  become: yes
+  when:
+      - "'{{ mysql_datadir }}' != '/var/lib/mysql'"
+      - stat_mysql_data_directory.stat.islnk == false
+
+
 - name: Set ownership on slow query log file (if configured).
   file:
     path: "{{ mysql_slow_query_log_file }}"
